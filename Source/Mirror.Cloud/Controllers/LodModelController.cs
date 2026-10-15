@@ -217,7 +217,7 @@ public partial class CloudApiController
     {
         var stored = basis[1];
 
-        if (stored is not null && stored.Data != 0) return (FVector)stored;
+        if (stored.Data != 0) return (FVector)stored;
 
         var sign = basis[2].W < 0.0f ? -1.0f : 1.0f;
 
