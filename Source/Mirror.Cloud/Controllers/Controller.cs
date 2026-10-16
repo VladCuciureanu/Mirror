@@ -529,6 +529,48 @@ public partial class CloudApiController : ControllerBase
      * Everything else keeps what the cook wrote. */
     private static readonly string[] EditorCopyReplacesCooked = ["NiagaraValidationRuleSet", "NiagaraScript", "NiagaraEmitter"];
 
+    /* The export of the editor's segment that sits where the cooked one does, under the name given.
+     *
+     * A name is only unique among the objects sharing an outer: every emitter of a Niagara system has
+     * a SpawnScript and an UpdateScript of its own. Asked for by the name alone, the first emitter's
+     * answered for all of them, and every emitter's scripts went on to name the first one's graph. */
+    private static UObject? EditorCounterpart(IPackage editorAsset, UObject export, string name)
+    {
+        var within = OuterChain(export);
+
+        UObject? only = null;
+        var named = 0;
+
+        foreach (var candidate in editorAsset.GetExports())
+        {
+            if (candidate.Name != name) continue;
+
+            named++;
+            only = candidate;
+
+            if (OuterChain(candidate) == within) return candidate;
+        }
+
+        /* One of the name and nowhere else to put it: the outers are named differently on the two sides */
+        return named == 1 ? only : null;
+    }
+
+    /* The names of an object's outers inside its package, outermost first: "Emitter.Script" for
+     * Emitter.Script.Thing */
+    private static string OuterChain(UObject export)
+    {
+        var parts = new List<string>();
+
+        for (var at = export.Outer; at is not null && at is not ResolvedPackageObject && at.TryLoad(out var outer); at = outer.Outer)
+        {
+            parts.Add(outer.Name);
+        }
+
+        parts.Reverse();
+
+        return string.Join('.', parts);
+    }
+
     [NonAction]
     public ActionResult HandleRawExport(string path, BaseProvider provider, IPackage? package = null)
     {
@@ -571,7 +613,7 @@ public partial class CloudApiController : ControllerBase
                      *
                      * Asked for by type rather than tried on everything, because for most exports
                      * the cooked value is the one to serve. */
-                    var editorData = editorAsset.GetExportOrNull($"{export.Name}EditorOnlyData");
+                    var editorData = EditorCounterpart(editorAsset, export, $"{export.Name}EditorOnlyData");
 
                     /* Whether what the editor wrote stands in for the cooked copy or only fills it out.
                      *
@@ -586,7 +628,7 @@ public partial class CloudApiController : ControllerBase
                      * callers resolve against, and the editor's are its own. */
                     var replaces = editorData is not null || EditorCopyReplacesCooked.Contains(export.ExportType);
 
-                    editorData ??= editorAsset.GetExportOrNull(export.Name);
+                    editorData ??= EditorCounterpart(editorAsset, export, export.Name);
 
                     if (editorData is null)
                     {
