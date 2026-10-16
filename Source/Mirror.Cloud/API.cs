@@ -13,6 +13,7 @@ namespace Mirror.Cloud;
 public partial class CloudWebAPI : ObservableObject
 {
     private WebApplication? app;
+    private static readonly SemaphoreSlim RequestGate = new(1, 1);
     
     [ObservableProperty] private bool isRunning;
     [ObservableProperty] private bool hasErrored;
@@ -68,6 +69,24 @@ public partial class CloudWebAPI : ObservableObject
         }
 
         app.UseHttpsRedirection();
+
+        /* One request into the game files at a time. The provider's packages, their lazily read exports and the
+         * imports they resolve are shared between requests and not safe to read from several threads: 16 parallel
+         * exports left later reads of other packages broken until a restart ("Invalid bool value" in a Blueprint's
+         * camera components). The status check stays outside, so a long export doesn't make Core look down. */
+        app.Use(async (context, next) =>
+        {
+            if (!context.Request.Path.StartsWithSegments("/api") || context.Request.Path.StartsWithSegments("/api/status"))
+            {
+                await next();
+                return;
+            }
+
+            await RequestGate.WaitAsync();
+            try { await next(); }
+            finally { RequestGate.Release(); }
+        });
+
         app.UseRouting();
         app.UseAuthentication();
         app.UseAuthorization();
