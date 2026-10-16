@@ -184,7 +184,23 @@ public static class EngineSchema
 
         said = $"{wroteMajor}.{wroteMinor}";
 
-        return wroteMajor == major && wroteMinor == minor;
+        if (wroteMajor == major && wroteMinor == minor) return true;
+
+        /* A dump from the nearest editor there is, said in so many words.
+         *
+         * A game can run an engine no public editor has (Fortnite 42.40 is UE 6.0, the newest editor
+         * 5.8). A dump marked "$StandsInFor": "<major>.<minor>" by whoever put it there is taken for
+         * that version, loudly, and the per-class check below still refuses any class whose
+         * mappings don't read in order as part of the dump's. Nothing stands in unless asked to. */
+        if ((string?) written["$StandsInFor"] == $"{major}.{minor}")
+        {
+            Log.Warning("Using the UE {0} engine schema in place of UE {1}.{2}, as it says it stands in for; classes that " +
+                        "changed between the two read wrong where the mappings can't tell", said, major, minor);
+
+            return true;
+        }
+
+        return false;
     }
 
     /* Whether what the mappings have is the engine's list with things taken out of it.
