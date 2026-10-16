@@ -5,6 +5,8 @@ using CUE4Parse_Conversion.Options;
 using CUE4Parse_Conversion.Sounds;
 using CUE4Parse_Conversion.Textures;
 using CUE4Parse.UE4.Assets;
+using CUE4Parse.UE4.Assets.Objects.Properties;
+using CUE4Parse.UE4.Assets.Objects;
 using CUE4Parse.UE4.Objects.UObject;
 using CUE4Parse.UE4.Assets.Exports;
 using CUE4Parse.UE4.Assets.Exports.Sound;
@@ -555,6 +557,49 @@ public partial class CloudApiController : ControllerBase
         return named == 1 ? only : null;
     }
 
+    /* An emitter's renderers as the game has them.
+     *
+     * The editor's copy of an emitter stands in for the cooked one, and its versions list every renderer the editor
+     * had. The cook leaves out the ones the platform doesn't load (NeedsLoadForTargetPlatform: switched off, not for
+     * this platform, or a static enabled binding that is false), and those come across from the editor segment only.
+     * Listed, they draw: NS_Apprentice_Body's lower-arm emitter has a second sprite renderer with no material, which
+     * the cook dropped and which otherwise draws UE's default checkerboard. */
+    private static void KeepCookedRenderers(UObject emitter, HashSet<string> cookedPaths)
+    {
+        foreach (var versions in emitter.Properties.Where(tag => tag.Name.Text == "VersionData"))
+        {
+            if (versions.Tag is not ArrayProperty { Value: { } list }) continue;
+
+            foreach (var version in list.Properties)
+            {
+                if (version is not StructProperty { Value.StructType: FStructFallback data }) continue;
+
+                foreach (var renderers in data.Properties.Where(tag => tag.Name.Text == "RendererProperties"))
+                {
+                    if (renderers.Tag is not ArrayProperty { Value: { } held }) continue;
+
+                    held.Properties.RemoveAll(entry => entry is ObjectProperty { Value: { IsExport: true, ResolvedObject: { } renderer } } &&
+                                                       !cookedPaths.Contains(WithinPackage(renderer.Outer, renderer.Name.Text)));
+                }
+            }
+        }
+    }
+
+    /* Where an object sits in its package, outers first: "Emitter.Renderer" */
+    private static string WithinPackage(ResolvedObject? outer, string name)
+    {
+        var parts = new List<string> { name };
+
+        for (var at = outer; at is not null && at is not ResolvedPackageObject; at = at.Outer)
+        {
+            parts.Add(at.Name.Text);
+        }
+
+        parts.Reverse();
+
+        return string.Join('.', parts);
+    }
+
     /* The names of an object's outers inside its package, outermost first: "Emitter.Script" for
      * Emitter.Script.Thing */
     private static string OuterChain(UObject export)
@@ -603,6 +648,9 @@ public partial class CloudApiController : ControllerBase
 
             if (provider.TryLoadPackage(objectPath, out var editorAsset))
             {
+                /* Every cooked export by where it sits, to tell what the cook kept from what only the editor has */
+                var cookedPaths = exports.Select(cooked => WithinPackage(cooked.Outer, cooked.Name)).ToHashSet();
+
                 foreach (var export in exports)
                 {
                     /* The companion usually holds its extra data beside the export, named for it.
@@ -655,6 +703,8 @@ public partial class CloudApiController : ControllerBase
                         }
 
                         export.Properties.AddRange(editorData.Properties);
+
+                        if (export.ExportType == "NiagaraEmitter") KeepCookedRenderers(export, cookedPaths);
                     }
                     else
                     {
