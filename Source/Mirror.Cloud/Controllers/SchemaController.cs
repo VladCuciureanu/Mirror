@@ -77,6 +77,17 @@ public partial class CloudApiController
 
         var mappings = MainProfile.Provider.MappingsContainer?.MappingsForGame;
 
+        /* An enum's values by number, which a cooked value or a Blueprint's byte compare means */
+        if (mappings is not null && !mappings.Types.ContainsKey(type) && mappings.Enums.TryGetValue(type, out var values))
+        {
+            return new JsonResult(new
+            {
+                mappings = MainProfile.LoadedMappingsFile,
+                name = type,
+                values = values.OrderBy(entry => entry.Key).Select(entry => new { value = entry.Key, name = entry.Value })
+            });
+        }
+
         if (mappings is null || !mappings.Types.TryGetValue(type, out var schema))
         {
             return NotFoundResponse;
