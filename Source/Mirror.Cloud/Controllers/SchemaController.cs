@@ -1,3 +1,4 @@
+using Newtonsoft.Json;
 using CUE4Parse.Utils;
 
 using Microsoft.AspNetCore.Mvc;
@@ -17,7 +18,9 @@ namespace Mirror.Cloud.Controllers;
 public partial class CloudApiController
 {
     [HttpGet("companion")]
-    public ActionResult GetCompanion(string? path)
+    /* full=true serves the segment's exports whole (outers and values), as written; otherwise each export's name, type
+     * and the names of the properties it has, which is what deciding how to merge it needs */
+    public ActionResult GetCompanion(string? path, bool full = false)
     {
         if (!IsBaseProfileReady || path is null) return NotInitializedResponse;
 
@@ -36,6 +39,16 @@ public partial class CloudApiController
         try
         {
             if (!provider.TryLoadPackage($"{path}.o.uasset", out var editorAsset)) return NotFoundResponse;
+
+            if (full)
+            {
+                return new ContentResult
+                {
+                    Content = JsonConvert.SerializeObject(new { exports = editorAsset.GetExports().ToArray() }, Formatting.Indented),
+                    ContentType = "application/json",
+                    StatusCode = 200
+                };
+            }
 
             return new JsonResult(editorAsset.GetExports().Select(one => new
             {
