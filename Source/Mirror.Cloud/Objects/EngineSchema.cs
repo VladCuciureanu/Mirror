@@ -286,7 +286,8 @@ public static class EngineSchema
 
         for (var index = 0; index < schema.PropertyCount; index++)
         {
-            if (schema.Properties.TryGetValue(index, out var property) && (mapped.Count == 0 || mapped[^1] != property)) mapped.Add(property);
+            /* A fixed size array stands in one place per element, each under the same name */
+            if (schema.Properties.TryGetValue(index, out var property) && (mapped.Count == 0 || mapped[^1].Name != property.Name)) mapped.Add(property);
         }
 
         var mappedNames = mapped.Select(property => property.Name).ToHashSet();
