@@ -82,6 +82,8 @@ public static class EngineSchema
 
         var reordered = new List<string>();
 
+        var merges = new List<string>();
+
         foreach (var (name, token) in written)
         {
             if (token is not JObject entry) continue;
@@ -116,7 +118,19 @@ public static class EngineSchema
 
             if (!Completes(schema, listed))
             {
-                refused.Add(name);
+                /* The game can have properties the dump's engine doesn't (Fortnite runs an engine no
+                 * public editor has: its ribbon renderer's RibbonInterfaceBinding). Those keep the place
+                 * the mappings give them, and the dump's editor only properties still go in between. */
+                if (!Merge(schema, listed, out var merged))
+                {
+                    refused.Add(name);
+
+                    continue;
+                }
+
+                Rebuild(schema, merged);
+
+                merges.Add(name);
 
                 continue;
             }
@@ -126,8 +140,13 @@ public static class EngineSchema
             completed++;
         }
 
-        Log.Information("Completed {0} type(s) from the engine schema, {1} put back in order, {2} already whole, {3} left alone",
-            completed, reordered.Count, already, refused.Count);
+        Log.Information("Completed {0} type(s) from the engine schema, {1} put back in order, {2} merged with properties only the game has, {3} already whole, {4} left alone",
+            completed, reordered.Count, merges.Count, already, refused.Count);
+
+        if (merges.Count > 0)
+        {
+            Log.Information("Merged with properties only the game has: {0}", string.Join(", ", merges));
+        }
 
         if (reordered.Count > 0)
         {
@@ -247,6 +266,75 @@ public static class EngineSchema
             }
 
             if (!found) return false;
+        }
+
+        return true;
+    }
+
+    /* The dump's list with the mappings' own properties put where the mappings have them.
+     *
+     * Walked through the mappings in order: each property the dump also has brings along the dump's
+     * properties in front of it that the mappings don't name (what a build without editor data
+     * leaves out), and one the dump doesn't have at all goes in as it is (what the game's engine
+     * added). A property both name, reached in the dump out of order, is the two disagreeing about
+     * the class, and nothing is merged. */
+    private static bool Merge(Struct schema, JArray listed, out JArray merged)
+    {
+        merged = new JArray();
+
+        var mapped = new List<PropertyInfo>();
+
+        for (var index = 0; index < schema.PropertyCount; index++)
+        {
+            if (schema.Properties.TryGetValue(index, out var property) && (mapped.Count == 0 || mapped[^1] != property)) mapped.Add(property);
+        }
+
+        var mappedNames = mapped.Select(property => property.Name).ToHashSet();
+
+        var at = 0;
+
+        foreach (var property in mapped)
+        {
+            var found = -1;
+
+            for (var look = at; look < listed.Count; look++)
+            {
+                if ((string?) listed[look]["Name"] == property.Name)
+                {
+                    found = look;
+
+                    break;
+                }
+            }
+
+            /* Named earlier in the dump than where the walk is: out of order */
+            if (found < 0 && listed.Skip(0).Take(at).Any(one => (string?) one["Name"] == property.Name)) return false;
+
+            if (found >= 0)
+            {
+                for (; at < found; at++)
+                {
+                    /* A property the mappings name, passed over here, comes later in the mappings than in the dump */
+                    if (mappedNames.Contains((string?) listed[at]["Name"] ?? "")) return false;
+
+                    merged.Add(listed[at]);
+                }
+
+                merged.Add(listed[found]);
+
+                at = found + 1;
+
+                continue;
+            }
+
+            merged.Add(new JObject { ["Name"] = property.Name, ["ArraySize"] = property.ArraySize ?? 1 });
+        }
+
+        for (; at < listed.Count; at++)
+        {
+            if (mappedNames.Contains((string?) listed[at]["Name"] ?? "")) return false;
+
+            merged.Add(listed[at]);
         }
 
         return true;
