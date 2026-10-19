@@ -1,6 +1,7 @@
 using CUE4Parse.UE4.Assets.Exports.Animation.CurveExpression;
 
 using Mirror.Cloud.Objects;
+using CUE4Parse.UE4.Assets.Objects.Properties;
 using CUE4Parse.UE4.Objects.UObject;
 using CUE4Parse.Utils;
 
@@ -32,7 +33,7 @@ public partial class CloudApiController
 
     /* What each curve is driven by, written back out as arithmetic */
     [HttpGet("export/expressions")]
-    public ActionResult GetCurveExpressions(string? path)
+    public ActionResult GetCurveExpressions(string? path, string? node = null, string? exportName = null)
     {
         if (!IsBaseProfileReady || MainProfile is null) return NotInitializedResponse;
 
@@ -48,10 +49,32 @@ public partial class CloudApiController
         var profile = FindBaseProfileForPath(path, found: out var found);
         if (!found) return NotFoundResponse;
 
-        if (LoadExportOfType<UCurveExpressionsDataAsset>(profile.Provider, path) is not { } asset || asset.ExpressionData?.ExpressionMap is not { } map)
+        Dictionary<FName, FExpressionObject>? map = null;
+        string[] namedConstants;
+        if (!string.IsNullOrWhiteSpace(node))
+        {
+            if (!profile.Provider.TryLoadPackage(path, out var package)) return NotFoundResponse;
+            var matches = package.ExportsLazy.Select(lazy => lazy.Value)
+                .Where(export => exportName == null || export.Name == exportName)
+                .SelectMany(export => export.Properties)
+                .Where(property => property.Name.Text == node)
+                .Select(property => (property.Tag as StructProperty)?.Value?.StructType)
+                .OfType<FAnimNodeRemapCurves>().ToArray();
+            if (matches.Length != 1) return NotFoundResponse;
+            map = matches[0].CachedExpressions;
+            namedConstants = matches[0].GetOrDefault<FName[]>("CachedConstantNames", [])
+                .Select(name => name.Text).ToArray();
+        }
+        else if (LoadExportOfType<UCurveExpressionsDataAsset>(profile.Provider, path) is { } asset)
+        {
+            map = asset.ExpressionData?.ExpressionMap;
+            namedConstants = asset.NamedConstants?.Select(name => name.Text).ToArray() ?? [];
+        }
+        else
         {
             return NotFoundResponse;
         }
+        if (map is null) return NotFoundResponse;
 
         var expressions = new List<CurveExpression>(map.Count);
 
@@ -74,8 +97,6 @@ public partial class CloudApiController
         }
 
         expressions.Sort((left, right) => string.CompareOrdinal(left.Target, right.Target));
-
-        var namedConstants = asset.NamedConstants?.Select(name => name.Text).ToArray() ?? [];
 
         return new JsonResult(new { namedConstants, expressions });
     }
