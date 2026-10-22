@@ -256,7 +256,7 @@ public static class RigLogicDnaBuilder
         }
         catch (Exception exception)
         {
-            Log.Warning($"[Mirror.Cloud]: Could not rebuild a behavior layer from the rig: {exception.Message}");
+            Log.Warning($"[Mirror.Cloud]: Could not rebuild a behavior layer from the rig: {exception.Message}\n{exception.StackTrace}");
 
             return null;
         }
@@ -287,8 +287,13 @@ public static class RigLogicDnaBuilder
             return null;
         }
 
-        /* ~~~ RigMetadata ~~~ */
-        reader.Skip(28); /* coordinateSystem, rotationSequence, rotationSigns */
+        /* ~~~ RigMetadata ~~~
+         *
+         * The axes of the reader the rig was built from. A cook builds it after the DNA is converted
+         * to the engine's runtime axes (left, down, front), so its joint deltas are in those, while the
+         * DNA's definition keeps the axes its descriptor declares (left, up, front). */
+        var rigAxes = new[] { reader.U32(), reader.U32(), reader.U32() };
+        reader.Skip(16); /* rotationSequence, rotationSigns */
 
         var lodCount = reader.U16();
         reader.U16(); /* guiControlCount */
@@ -428,6 +433,12 @@ public static class RigLogicDnaBuilder
 
         var blockHeight = padTo * 2;
 
+        /* The deltas go into the DNA in the axes it declares. Where the rig's and the DNA's axes are
+         * the same three but for direction (Y is down in one and up in the other), a translation takes
+         * that axis's sign and a rotation the sign times the determinant of the change, which is how a
+         * reflection carries one: (left, down, front) to (left, up, front) negates ty, rx and rz. */
+        var attributeSigns = AttributeSigns(rigAxes, DescriptorAxes(dna));
+
         var jointGroups = new List<(ushort[] Lods, ushort[] Inputs, ushort[] Outputs, float[] Values, ushort[] Joints)>();
         var maxOutput = 0;
 
@@ -465,6 +476,20 @@ public static class RigLogicDnaBuilder
             /* The joints a group touches, which the DNA states rather than implying */
             var joints = outputs.Select(index => (ushort) (index / 9)).Distinct().OrderBy(index => index).ToArray();
 
+            if (attributeSigns is not null)
+            {
+                for (var row = 0; row < rows; row++)
+                {
+                    var sign = attributeSigns[outputs[row] % 9];
+                    if (sign == 1f) continue;
+
+                    for (var col = 0; col < cols; col++)
+                    {
+                        matrix[row * cols + col] *= sign;
+                    }
+                }
+            }
+
             jointGroups.Add((lods, inputs, outputs, matrix, joints));
         }
 
@@ -482,7 +507,10 @@ public static class RigLogicDnaBuilder
         behavior.F32Array(guiToRaw.CutValues);
 
         /* The PSD network keeps one entry per PSD with a run of inputs behind it. The DNA writes the
-         * same thing one cell at a time, so a PSD's output index is repeated for every input. */
+         * same thing one cell at a time, so a PSD's output index is repeated for every input. The
+         * stored weight is not a cell's though: RigLogic builds it as the product of all of a PSD's
+         * cells (PSDNetFactory, psd.weight *= psdWeights[i]), so the first cell carries it and the
+         * rest are one. Each cell carrying it made a PSD of n inputs weigh weight^n. */
         var psdRows = new List<ushort>();
         var psdColumns = new List<ushort>();
         var psdValues = new List<float>();
@@ -495,7 +523,7 @@ public static class RigLogicDnaBuilder
             {
                 psdRows.Add(output);
                 psdColumns.Add(psdInputIndices[psdOffsets[i] + j]);
-                psdValues.Add(psdWeights[i]);
+                psdValues.Add(j == 0 ? psdWeights[i] : 1.0f);
             }
         }
 
@@ -543,6 +571,80 @@ public static class RigLogicDnaBuilder
             $"{blendShapeCount} blend shape(s), {animatedMapCount} animated map(s)");
 
         return RewriteDna(dna, dumpStart, behavior.ToArray());
+    }
+
+    /* The sign each of a joint's nine attributes (tx ty tz rx ry rz sx sy sz) takes going from the rig's
+     * axes to the DNA's, or null when they agree. Axes are RigLogic's: left, right, up, down, front, back. */
+    private static float[]? AttributeSigns(uint[] rigAxes, uint[]? dnaAxes)
+    {
+        if (dnaAxes is null)
+        {
+            Log.Warning("[Mirror.Cloud]: Could not read the DNA's axes, so the rig's deltas go in as they are");
+
+            return null;
+        }
+
+        if (rigAxes.SequenceEqual(dnaAxes)) return null;
+
+        var signs = new float[3];
+
+        for (var axis = 0; axis < 3; axis++)
+        {
+            if (rigAxes[axis] > 5 || dnaAxes[axis] > 5 || rigAxes[axis] / 2 != dnaAxes[axis] / 2)
+            {
+                Log.Warning($"[Mirror.Cloud]: The rig's axes ({string.Join(", ", rigAxes)}) are not the DNA's ({string.Join(", ", dnaAxes)}) up to direction, so its deltas go in as they are");
+
+                return null;
+            }
+
+            signs[axis] = rigAxes[axis] == dnaAxes[axis] ? 1f : -1f;
+        }
+
+        var determinant = signs[0] * signs[1] * signs[2];
+
+        Log.Information($"[Mirror.Cloud]: Converting the rig's deltas from axes ({string.Join(", ", rigAxes)}) to the DNA's ({string.Join(", ", dnaAxes)})");
+
+        return [signs[0], signs[1], signs[2], determinant * signs[0], determinant * signs[1], determinant * signs[2], 1f, 1f, 1f];
+    }
+
+    /* The coordinate system the DNA's descriptor declares: past the name, archetype, gender, age,
+     * metadata and the two units. */
+    private static uint[]? DescriptorAxes(byte[] dna)
+    {
+        if (dna.Length < 11 || dna[0] != 'D' || dna[1] != 'N' || dna[2] != 'A') return null;
+
+        var reader = new Reader(dna) { Position = 7 };
+        var count = reader.U32();
+
+        for (var i = 0u; i < count; i++)
+        {
+            var id = new string([(char) reader.U8(), (char) reader.U8(), (char) reader.U8(), (char) reader.U8()]);
+            reader.U16();
+            reader.U16();
+            var offset = reader.U32();
+            reader.U32();
+
+            if (id != "desc") continue;
+
+            var descriptor = new Reader(dna) { Position = (int) offset };
+            /* A string is its length then its bytes. Read apart: Position += U32() reads Position before U32() moves it */
+            void SkipString() { var length = (int) descriptor.U32(); descriptor.Position += length; }
+
+            SkipString();                                                      /* name */
+            descriptor.Position += 6;                                        /* archetype, gender, age */
+            var pairs = descriptor.U32();                                    /* metadata */
+
+            for (var pair = 0u; pair < pairs * 2; pair++)
+            {
+                SkipString();
+            }
+
+            descriptor.Position += 4;                                        /* translationUnit, rotationUnit */
+
+            return [descriptor.U16(), descriptor.U16(), descriptor.U16()];
+        }
+
+        return null;
     }
 
     /* Which vector width the rig was built for, read off the padding it left behind. The row count a
