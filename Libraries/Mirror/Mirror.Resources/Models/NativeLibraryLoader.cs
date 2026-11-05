@@ -2,7 +2,6 @@ using System.IO;
 using System.Threading.Tasks;
 
 using CUE4Parse_Conversion.Textures;
-using CUE4Parse_Conversion.Textures.BC;
 using CUE4Parse.Compression;
 
 namespace Mirror.Resources.Models;
@@ -22,8 +21,5 @@ public abstract class NativeLibraryLoader
         ZlibHelper.Initialize(zlibPath);
         
         TextureDecoder.UseAssetRipperTextureDecoder = true;
-        var detexPath = Path.Combine(RuntimeFolder.FullName, DetexHelper.DLL_NAME);
-        if (!File.Exists(detexPath)) await DetexHelper.LoadDllAsync(detexPath);
-        DetexHelper.Initialize(detexPath);
     }
 }

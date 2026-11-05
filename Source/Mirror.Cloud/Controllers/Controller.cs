@@ -479,7 +479,7 @@ public partial class CloudApiController : ControllerBase
             return File(mipData, contentType);
         }
 
-        var textureData = texture.Decode();
+        var textureData = texture.Decode(new ExportOptions());
         if (textureData is null)
         {
             /* Named rather than written out.
@@ -499,7 +499,7 @@ public partial class CloudApiController : ControllerBase
             });
         }
 
-        return File(textureData.Encode(ETextureFormat.Png, false, out _), "image/png");
+        return File(textureData.Encode(new ExportOptions(textureFormat: ETextureFormat.Png, exportHdrTexturesAsHdr: false), out _), "image/png");
     }
 
     /* Return the source volume of a vector field, one FFloat16Color per voxel */

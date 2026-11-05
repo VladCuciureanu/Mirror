@@ -84,9 +84,11 @@ public partial class CloudApiController
 
         foreach (var material in staticMesh.StaticMaterials)
         {
+            var slotName = material.MaterialSlotName?.Text ?? string.Empty;
+
             slots.Add(new StaticSlot(
-                material.MaterialSlotName.Text,
-                material.ImportedMaterialSlotName?.Text ?? material.MaterialSlotName.Text,
+                slotName,
+                material.ImportedMaterialSlotName?.Text ?? slotName,
                 material.MaterialInterface?.Name));
         }
 
@@ -228,7 +230,7 @@ public partial class CloudApiController
         try
         {
             /* Only the Nanite, since the LODs beside it have been read already */
-            var whole = new StaticMeshDto(staticMesh, EMeshQuality.All, ENaniteMeshFormat.NaniteOnly);
+            var whole = new StaticMeshDto(staticMesh, new ExportOptions(naniteMeshFormat: ENaniteMeshFormat.NaniteOnly, meshQuality: EMeshQuality.All));
 
             read = whole.LODs.FirstOrDefault(one => one.IsNanite);
         }
