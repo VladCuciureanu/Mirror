@@ -16,6 +16,7 @@ using CommunityToolkit.Mvvm.Input;
 using CUE4Parse.MappingsProvider;
 using CUE4Parse.UE4.AssetRegistry;
 using CUE4Parse.UE4.AssetRegistry.Objects;
+using CUE4Parse.UE4.IO.Objects;
 using CUE4Parse.UE4.Readers;
 using CUE4Parse.UE4.Versions;
 using CUE4Parse.UE4.VirtualFileSystem;
@@ -223,6 +224,15 @@ public class Profile : BaseProfileDisplay
 
         foreach (var plugin in Plugins.OfType<IEditorSegmentsPlugin>())
         {
+            var named = 0;
+
+            foreach (var packageName in plugin.ExternalPackageNames(this))
+            {
+                if (Provider.ExternalPackageNames.TryAdd(FPackageId.FromName(packageName), packageName)) named++;
+            }
+
+            if (named > 0) Log.Information($"{Name}: {plugin.Name} named {named} package(s) the game doesn't carry");
+
             var containers = plugin.ResolveContainers(this).ToList();
             if (containers.Count == 0) continue;
 

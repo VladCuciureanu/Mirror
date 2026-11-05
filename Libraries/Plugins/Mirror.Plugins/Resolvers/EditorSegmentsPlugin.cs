@@ -10,4 +10,9 @@ public interface IEditorSegmentsPlugin : IPlugin
 {
     /* The optional-segment containers (.utoc, with their .ucas beside them) for this profile's build, or none */
     IEnumerable<FileInfo> ResolveContainers(BaseProfile profile);
+
+    /* Names of packages the editor copies import that the game doesn't carry ("/Niagara/Modules/Update/Color/ScaleColor":
+       editor-only engine content), so those imports come across named instead of as nothing (the provider's
+       ExternalPackageNames). The consumer is an editor that has them. */
+    IEnumerable<string> ExternalPackageNames(BaseProfile profile) => [];
 }
