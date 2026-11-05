@@ -31,6 +31,10 @@ public partial class CloudApiController
 
         var provider = profile.Provider;
 
+        /* The editor copy comes merged into the cooked package (an IoStore optional segment) or, from containers
+         * that list it on its own, as "Foo.o.uasset"; the cooked package is what finds either */
+        if (!provider.TryLoadPackage(path, out var cooked)) return NotFoundResponse;
+
         var wasUsing = provider.MappingsContainer;
         var editorSchema = EditorSchemaFor(provider);
 
@@ -38,19 +42,19 @@ public partial class CloudApiController
 
         try
         {
-            if (!provider.TryLoadPackage($"{path}.o.uasset", out var editorAsset)) return NotFoundResponse;
+            if (EditorSegment.EditorExports(provider, cooked, path) is not { } editorAsset) return NotFoundResponse;
 
             if (full)
             {
                 return new ContentResult
                 {
-                    Content = JsonConvert.SerializeObject(new { exports = editorAsset.GetExports().ToArray() }, Formatting.Indented),
+                    Content = JsonConvert.SerializeObject(new { exports = editorAsset.ToArray() }, Formatting.Indented),
                     ContentType = "application/json",
                     StatusCode = 200
                 };
             }
 
-            return new JsonResult(editorAsset.GetExports().Select(one => new
+            return new JsonResult(editorAsset.Select(one => new
             {
                 name = one.Name,
                 type = one.ExportType,

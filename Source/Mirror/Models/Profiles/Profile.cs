@@ -16,6 +16,7 @@ using CommunityToolkit.Mvvm.Input;
 using CUE4Parse.MappingsProvider;
 using CUE4Parse.UE4.AssetRegistry;
 using CUE4Parse.UE4.AssetRegistry.Objects;
+using CUE4Parse.UE4.Readers;
 using CUE4Parse.UE4.Versions;
 using CUE4Parse.UE4.VirtualFileSystem;
 
@@ -148,6 +149,7 @@ public class Profile : BaseProfileDisplay
         cancellationToken.ThrowIfCancellationRequested();
 
         await InitializeTextureStreaming();
+        MountEditorSegments();
         await LoadKeys(cancellationToken);
         
         if (Provider is not null && Provider.Files.Count == 0 && Encryption.MainKey == EMPTY_CHAR && Provider.Keys.Count == 0)
@@ -210,6 +212,28 @@ public class Profile : BaseProfileDisplay
             UpdateStatus($"Streaming Textures ({streamingPlugin.Name})");
 
             await streamingPlugin.StreamTextures(this);
+        }
+    }
+
+    /* Containers with the editor's copy of the game's packages that ship apart from the game (IEditorSegmentsPlugin).
+     * Mounted before LoadKeys like the streamed ones, so the encrypted ones mount as their key arrives. */
+    private void MountEditorSegments()
+    {
+        if (Provider is null) return;
+
+        foreach (var plugin in Plugins.OfType<IEditorSegmentsPlugin>())
+        {
+            var containers = plugin.ResolveContainers(this).ToList();
+            if (containers.Count == 0) continue;
+
+            UpdateStatus($"Mounting Editor Data ({plugin.Name})");
+
+            foreach (var container in containers)
+            {
+                Provider.RegisterVfs(container.FullName, [container.OpenRead()], it => new FStreamArchive(it, File.OpenRead(it), Provider.Versions));
+            }
+
+            Log.Information($"{Name}: {plugin.Name} registered {containers.Count} editor data container(s) from {containers[0].DirectoryName}");
         }
     }
 

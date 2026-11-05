@@ -552,14 +552,14 @@ public partial class CloudApiController : ControllerBase
      * A name is only unique among the objects sharing an outer: every emitter of a Niagara system has
      * a SpawnScript and an UpdateScript of its own. Asked for by the name alone, the first emitter's
      * answered for all of them, and every emitter's scripts went on to name the first one's graph. */
-    private static UObject? EditorCounterpart(IPackage editorAsset, UObject export, string name)
+    private static UObject? EditorCounterpart(IReadOnlyList<UObject> editorExports, UObject export, string name)
     {
         var within = OuterChain(export);
 
         UObject? only = null;
         var named = 0;
 
-        foreach (var candidate in editorAsset.GetExports())
+        foreach (var candidate in editorExports)
         {
             if (candidate.Name != name) continue;
 
@@ -637,12 +637,12 @@ public partial class CloudApiController : ControllerBase
     {
         try
         {
-            var objectPath = $"{path.SubstringBefore('.')}.o.uasset";
-
             /* Loading by path again would undo any choice the caller already made between containers
              * mounting this path, so its package is used when there is one */
             var pkg = package ?? provider.LoadPackage(path);
-            var exports = pkg.GetExports().ToArray();
+
+            /* The cooked package's own exports; an editor copy merged into it follows them and is read below */
+            var exports = EditorSegment.CookedExports(pkg).ToArray();
             var finalExports = new List<UObject>(exports);
 
             var mergedExports = new List<UObject>();
@@ -662,7 +662,7 @@ public partial class CloudApiController : ControllerBase
             try
             {
 
-            if (provider.TryLoadPackage(objectPath, out var editorAsset))
+            if (EditorSegment.EditorExports(provider, pkg, path) is { } editorAsset)
             {
                 /* Every cooked export by where it sits, to tell what the cook kept from what only the editor has */
                 var cookedPaths = exports.Select(cooked => WithinPackage(cooked.Outer, cooked.Name)).ToHashSet();
@@ -740,7 +740,7 @@ public partial class CloudApiController : ControllerBase
                  * rather than nothing, and every export in it then arrives a second time. */
                 var cookedNames = exports.Select(cooked => cooked.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-                finalExports.AddRange(editorAsset.GetExports()
+                finalExports.AddRange(editorAsset
                     .Where(editorExport => !mergedExports.Contains(editorExport))
                     .Where(editorExport => !skippedEditorExports.Contains(editorExport))
                     .Where(editorExport => !cookedNames.Contains(editorExport.Name)));

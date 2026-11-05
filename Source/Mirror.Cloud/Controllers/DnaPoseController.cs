@@ -500,7 +500,7 @@ public partial class CloudApiController
     {
         if (provider.TryLoadPackage(path, out var package))
         {
-            foreach (var export in package.GetExports())
+            foreach (var export in EditorSegment.CookedExports(package))
             {
                 if (FindDnaObject(export) is { } found) return found;
             }

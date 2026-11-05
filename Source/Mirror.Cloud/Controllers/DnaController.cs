@@ -71,7 +71,7 @@ public partial class CloudApiController
 
         if (profile.Provider.TryLoadPackage(path, out var package))
         {
-            foreach (var export in package.GetExports())
+            foreach (var export in EditorSegment.CookedExports(package))
             {
                 if (FindDnaBytes(export, wantRigLogic) is { } bytes)
                 {

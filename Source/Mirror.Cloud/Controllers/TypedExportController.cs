@@ -23,7 +23,7 @@ public partial class CloudApiController
 
         return new ContentResult
         {
-            Content = JsonConvert.SerializeObject(new { exports = package.GetExports().ToArray() },
+            Content = JsonConvert.SerializeObject(new { exports = EditorSegment.CookedExports(package).ToArray() },
                 new JsonSerializerSettings { ContractResolver = new InstancedStructTypeResolver() }),
             ContentType = "application/json",
             StatusCode = 200
