@@ -54,7 +54,7 @@ public partial class CloudApiController
 
             if (profile.Provider.TrySaveAsset(beside, out var payload) && payload.Length > 0)
             {
-                typeface = payload;
+                typeface = UnwrapFontFaceData(payload);
             }
         }
 
@@ -75,5 +75,26 @@ public partial class CloudApiController
             : "ttf";
 
         return File(typeface, "application/octet-stream", $"{fontFace.Name}.{extension}");
+    }
+
+    /* The .ufont beside a package is FFontFaceData as UE serializes it (FontFaceData.cpp, Serialize): the typeface as a
+     * TArray<uint8> (an int32 count, then the bytes), then the face's other fields. Fortnite 43.00's HeadingNow faces
+     * are 4 + 91800 + 46 bytes. Passed whole, the engine is handed a font that doesn't start with its tag and FreeType
+     * maps no glyph. A payload that already opens with a font tag is returned as it is. */
+    private static byte[] UnwrapFontFaceData(byte[] payload)
+    {
+        static bool IsFontTag(byte[] bytes, int at) =>
+            bytes.Length >= at + 4 &&
+            ((bytes[at] == 'O' && bytes[at + 1] == 'T' && bytes[at + 2] == 'T' && bytes[at + 3] == 'O') ||
+             (bytes[at] == 0 && bytes[at + 1] == 1 && bytes[at + 2] == 0 && bytes[at + 3] == 0) ||
+             (bytes[at] == 't' && bytes[at + 1] == 'r' && bytes[at + 2] == 'u' && bytes[at + 3] == 'e') ||
+             (bytes[at] == 't' && bytes[at + 1] == 't' && bytes[at + 2] == 'c' && bytes[at + 3] == 'f'));
+
+        if (IsFontTag(payload, 0) || payload.Length < 8) return payload;
+
+        var count = BitConverter.ToInt32(payload, 0);
+        if (count <= 0 || count > payload.Length - 4 || !IsFontTag(payload, 4)) return payload;
+
+        return payload.AsSpan(4, count).ToArray();
     }
 }
