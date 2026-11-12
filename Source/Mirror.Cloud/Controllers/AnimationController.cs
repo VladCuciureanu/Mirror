@@ -140,7 +140,10 @@ public partial class CloudApiController
             needsBase = IsAdditive(animSequence) && NeedsBase(animSequence) && baseOverride is null,
             baseUsed = baseOverride?.GetPathName(),
 
-            tracks = trackEntries
+            tracks = trackEntries,
+
+            /* Sent with the tracks so a sequence that only drives curves is not empty at the other end */
+            curves = BuildCurves(animSequence)
         });
     }
 
@@ -159,9 +162,44 @@ public partial class CloudApiController
             case FUECompressedAnimData ueData:
                 return ReadUeTracks(animSequence, ueData, trackMap);
 
+            /* Nothing compressed for the bones at all: a sequence that only drives curves (a face
+             * or a prop's material, M_LRG_Professor_Pup_Idle). It has no keys to send, which is not
+             * the same as keys nothing here can read. */
+            case null when IsCurveOnly(animSequence):
+                return new Dictionary<int, DecodedTrack>();
+
             default:
                 return null;
         }
+    }
+
+    /* No bone data was cooked and the sequence keeps curves instead */
+    private static bool IsCurveOnly(UAnimSequence animSequence) =>
+        animSequence.CompressedDataStructure is null &&
+        (animSequence.CompressedCurveData?.FloatCurves is { Length: > 0 } || animSequence.CompressedCurveNames is { Length: > 0 });
+
+    /* The float curves the sequence keeps, by name, with their keys: what a curve-only sequence is
+     * made of, and what the bone tracks leave out of any other */
+    private static List<object> BuildCurves(UAnimSequence animSequence)
+    {
+        var curves = new List<object>();
+        if (animSequence.CompressedCurveData?.FloatCurves is not { } floatCurves) return curves;
+
+        foreach (var curve in floatCurves)
+        {
+            var keys = curve.FloatCurve?.Keys ?? [];
+            var times = new float[keys.Length];
+            var values = new float[keys.Length];
+            for (var i = 0; i < keys.Length; i++)
+            {
+                times[i] = keys[i].Time;
+                values[i] = keys[i].Value;
+            }
+
+            curves.Add(new { name = curve.CurveName.Text, times, values });
+        }
+
+        return curves;
     }
 
     /* ACL hands back a pose per track per sample rather than the keys it was given, which is what
