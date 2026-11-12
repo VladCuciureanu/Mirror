@@ -54,7 +54,7 @@ public static class Globals
     
     public static readonly DirectoryInfo ProfilesFolder = new(Path.Combine(DataFolder, ".profiles"));
     public static readonly DirectoryInfo InstallationFolder = new(Path.Combine(DataFolder, ".installations"));
-    public static readonly DirectoryInfo RuntimeFolder = new(Path.Combine(DataFolder, ".runtime"));
+    public static readonly DirectoryInfo RuntimeFolder = new(ResolveRuntimeFolder());
     public static readonly DirectoryInfo ProfileInstallationFolder = new(Path.Combine(DataFolder, ".installation"));
     public static readonly DirectoryInfo OnDemandFolder = new(Path.Combine(RuntimeFolder.ToString(), ".on.demand"));
     public static readonly DirectoryInfo OnDemandChunksFolder = new(Path.Combine(OnDemandFolder.ToString(), ".chunks"));
@@ -65,6 +65,28 @@ public static class Globals
     private static readonly DirectoryInfo ExportFolder = new(Path.Combine(RuntimeFolder.ToString(), ".export"));
     public static readonly DirectoryInfo AudioFilesFolder = new(Path.Combine(ExportFolder.ToString(), ".audio"));
     public static readonly DirectoryInfo AudioDecodersFolder = new(Path.Combine(InstallationFolder.ToString(), ".decoders"));
+
+    /* Where the runtime cache (on-demand chunks, exports, native libraries) lives, first match wins:
+     *  1. MIRROR_RUNTIME_DIR, when set;
+     *  2. <checkout>\.cache\mirror, when this build runs from a checkout that holds Mirror under
+     *     third_party\Mirror (the fortnite-viewer layout), found by walking up from the executable;
+     *  3. %APPDATA%\Mirror\.runtime, upstream's place.
+     * Settings, profiles, mappings and logs stay in %APPDATA%\Mirror. */
+    private static string ResolveRuntimeFolder()
+    {
+        var overridden = Environment.GetEnvironmentVariable("MIRROR_RUNTIME_DIR");
+        if (!string.IsNullOrWhiteSpace(overridden)) return Path.GetFullPath(overridden);
+
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
+        {
+            if (Directory.Exists(Path.Combine(dir.FullName, "third_party", "Mirror")))
+            {
+                return Path.Combine(dir.FullName, ".cache", "mirror");
+            }
+        }
+
+        return Path.Combine(DataFolder, ".runtime");
+    }
 
     public static void EnsureDirectories()
     {

@@ -6,7 +6,8 @@ namespace Mirror.ViewModels.Settings;
 
 public partial class ConnectionsSettingsViewModel : ViewModelBase
 {
-    [ObservableProperty] private bool _useDiscordRichPresence = true;
+    /* Off unless turned on: a viewer's backend has no reason to announce itself on Discord. */
+    [ObservableProperty] private bool _useDiscordRichPresence = false;
     [ObservableProperty] private bool _syncFModel = false;
 
     partial void OnUseDiscordRichPresenceChanged(bool value)
