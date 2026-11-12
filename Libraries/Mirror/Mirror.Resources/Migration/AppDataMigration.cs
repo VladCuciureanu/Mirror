@@ -24,7 +24,17 @@ public static class AppDataMigration
         }
 
         MigrateDirectory(Path.Combine(Globals.CODENAME, "Profiles"), Path.Combine(Globals.CODENAME, ".profiles"));
+
+        /* A data folder kept elsewhere (a checkout's .cache\mirror) starts from what %APPDATA%\Mirror
+         * holds, the runtime cache left out as above. */
+        if (!IsAppData && Directory.Exists(Globals.AppDataFolder) && !Directory.Exists(Globals.DataFolder))
+        {
+            CopyDirectory(Globals.AppDataFolder, Globals.DataFolder, isRoot: true);
+        }
     }
+
+    private static bool IsAppData => string.Equals(Path.GetFullPath(Globals.DataFolder).TrimEnd(Path.DirectorySeparatorChar),
+        Path.GetFullPath(Globals.AppDataFolder).TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase);
     
     public static void MigrateDirectory(string oldRelativePath, string newRelativePath, bool skipRuntime = false)
     {
@@ -60,15 +70,18 @@ public static class AppDataMigration
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         var levelled = path.Replace('/', Path.DirectorySeparatorChar);
 
-        foreach (var previous in PreviousNames)
-        {
-            var oldPath = Path.Combine(appData, previous);
+        /* The previous names, and %APPDATA%\Mirror itself when the data folder is kept elsewhere. */
+        var oldPaths = new System.Collections.Generic.List<string>();
+        foreach (var previous in PreviousNames) oldPaths.Add(Path.Combine(appData, previous));
+        if (!IsAppData) oldPaths.Add(Globals.AppDataFolder);
 
-            if (!levelled.StartsWith(oldPath, StringComparison.OrdinalIgnoreCase)) continue;
+        foreach (var oldPath in oldPaths)
+        {
+            if (!levelled.StartsWith(oldPath + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) continue;
 
             var rest = levelled.Substring(oldPath.Length).TrimStart(Path.DirectorySeparatorChar);
 
-            return Path.Combine(appData, Globals.CODENAME, rest);
+            return Path.Combine(Globals.DataFolder, rest);
         }
 
         return path;

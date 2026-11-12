@@ -50,11 +50,14 @@ public static class Globals
     
     /* Application Folders */
     public static readonly string ApplicationDataFolder = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-    private static readonly string DataFolder = Path.Combine(ApplicationDataFolder, CODENAME);
-    
+    /* Upstream's data folder, %APPDATA%\Mirror. */
+    public static readonly string AppDataFolder = Path.Combine(ApplicationDataFolder, CODENAME);
+    /* Where this build keeps everything (settings, profiles, mappings, logs, the runtime cache). */
+    public static readonly string DataFolder = ResolveDataFolder();
+
     public static readonly DirectoryInfo ProfilesFolder = new(Path.Combine(DataFolder, ".profiles"));
     public static readonly DirectoryInfo InstallationFolder = new(Path.Combine(DataFolder, ".installations"));
-    public static readonly DirectoryInfo RuntimeFolder = new(ResolveRuntimeFolder());
+    public static readonly DirectoryInfo RuntimeFolder = new(Path.Combine(DataFolder, ".runtime"));
     public static readonly DirectoryInfo ProfileInstallationFolder = new(Path.Combine(DataFolder, ".installation"));
     public static readonly DirectoryInfo OnDemandFolder = new(Path.Combine(RuntimeFolder.ToString(), ".on.demand"));
     public static readonly DirectoryInfo OnDemandChunksFolder = new(Path.Combine(OnDemandFolder.ToString(), ".chunks"));
@@ -66,15 +69,15 @@ public static class Globals
     public static readonly DirectoryInfo AudioFilesFolder = new(Path.Combine(ExportFolder.ToString(), ".audio"));
     public static readonly DirectoryInfo AudioDecodersFolder = new(Path.Combine(InstallationFolder.ToString(), ".decoders"));
 
-    /* Where the runtime cache (on-demand chunks, exports, native libraries) lives, first match wins:
-     *  1. MIRROR_RUNTIME_DIR, when set;
+    /* Where this build keeps its data, first match wins:
+     *  1. MIRROR_DATA_DIR, when set;
      *  2. <checkout>\.cache\mirror, when this build runs from a checkout that holds Mirror under
      *     third_party\Mirror (the fortnite-viewer layout), found by walking up from the executable;
-     *  3. %APPDATA%\Mirror\.runtime, upstream's place.
-     * Settings, profiles, mappings and logs stay in %APPDATA%\Mirror. */
-    private static string ResolveRuntimeFolder()
+     *  3. %APPDATA%\Mirror, upstream's place.
+     * The layout inside is upstream's (.profiles, .installation, .runtime, .logs, Settings.json). */
+    private static string ResolveDataFolder()
     {
-        var overridden = Environment.GetEnvironmentVariable("MIRROR_RUNTIME_DIR");
+        var overridden = Environment.GetEnvironmentVariable("MIRROR_DATA_DIR");
         if (!string.IsNullOrWhiteSpace(overridden)) return Path.GetFullPath(overridden);
 
         for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
@@ -85,7 +88,7 @@ public static class Globals
             }
         }
 
-        return Path.Combine(DataFolder, ".runtime");
+        return AppDataFolder;
     }
 
     public static void EnsureDirectories()

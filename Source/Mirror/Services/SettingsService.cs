@@ -23,20 +23,12 @@ public partial class SettingsService : ObservableObject, IService
 
     [ObservableProperty] private DebugSettingsViewModel _debug = new();
     
-    private static readonly DirectoryInfo DirectoryPath = new(Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        CODENAME));
-    
+    private static readonly DirectoryInfo DirectoryPath = new(DataFolder);
+
 #if DEBUG
-    private static readonly FileInfo FilePath = new(Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        CODENAME,
-        "Settings.Debug.json"));
+    private static readonly FileInfo FilePath = new(Path.Combine(DataFolder, "Settings.Debug.json"));
 #else
-    private static readonly FileInfo FilePath = new(Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        CODENAME,
-        "Settings.json"));
+    private static readonly FileInfo FilePath = new(Path.Combine(DataFolder, "Settings.json"));
 #endif
 
     public SettingsService()
