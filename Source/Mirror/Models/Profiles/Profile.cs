@@ -474,6 +474,26 @@ public class Profile : BaseProfileDisplay
 
         while (walking is not null)
         {
+            /* A content build's own record comes first. Fortnite 43.10's launcher installs UEFN into the game's folder,
+             * and its Engine\Build\Build.version is then UEFN's (CL 60458657), a later changelist than the cooked
+             * content (Cloud\cloudcontent.json: ++Fortnite+Release-43.10-CL-60118918) */
+            var content = Path.Combine(walking.FullName, "Cloud", "cloudcontent.json");
+
+            if (File.Exists(content))
+            {
+                try
+                {
+                    var buildVersion = Newtonsoft.Json.Linq.JObject.Parse(File.ReadAllText(content)).Value<string>("BuildVersion") ?? string.Empty;
+                    var found = Regex.Match(buildVersion, @"^(.*)-CL-(\d+)");
+
+                    if (found.Success) return new FBuildVersion { BranchName = found.Groups[1].Value, Changelist = long.Parse(found.Groups[2].Value) };
+                }
+                catch (Exception e)
+                {
+                    Log.Warning("Could not read {0}: {1}", content, e.Message);
+                }
+            }
+
             var named = Path.Combine(walking.FullName, "Engine", "Build", "Build.version");
 
             if (File.Exists(named))
